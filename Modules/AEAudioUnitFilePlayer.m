@@ -69,7 +69,7 @@ static inline BOOL _checkResult(OSStatus result, const char *operation, const ch
 //-----------------------------------------------------------------------------
 + (id)audioUnitFilePlayerWithController:(AEAudioController*)audioController error:(NSError**)error
 {
-	return [[[AEAudioUnitFilePlayer alloc] initWithAudioController:audioController error:error] autorelease];
+	return [[AEAudioUnitFilePlayer alloc] initWithAudioController:audioController error:error];
 }
 
 //-----------------------------------------------------------------------------
@@ -88,8 +88,6 @@ static inline BOOL _checkResult(OSStatus result, const char *operation, const ch
     }
 
     _audioControllerRef = nil;
-   
-    [super dealloc];
 }
 
 //-----------------------------------------------------------------------------
@@ -163,7 +161,7 @@ static inline BOOL _checkResult(OSStatus result, const char *operation, const ch
 															 kAudioUnitScope_Global, 0, &curTime, &valsz),
 															 "AudioUnitGetProperty - kAudioUnitProperty_CurrentPlayTime");
 	
-		_playhead = (unsigned long)curTime.mSampleTime;
+		_playhead = (SInt32)curTime.mSampleTime;
 		_playhead += _locatehead;
 	}
 
@@ -223,7 +221,6 @@ static inline BOOL _checkResult(OSStatus result, const char *operation, const ch
 				!checkResult(result=AUGraphNodeInfo(_audioGraph, _node, NULL, &_audioUnit), "AUGraphNodeInfo") ) {
 			  
 			  if ( error ) *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:result userInfo:[NSDictionary dictionaryWithObject:@"Couldn't initialise audio unit" forKey:NSLocalizedDescriptionKey]];
-			  [self release];
 			  return nil;
 		 }
 		 
@@ -239,7 +236,6 @@ static inline BOOL _checkResult(OSStatus result, const char *operation, const ch
 			  AEAudioStreamBasicDescriptionSetChannelsPerFrame(&defaultAudioDescription, audioDescription.mChannelsPerFrame);
 			  if ( !checkResult(result=AudioUnitSetProperty(_audioUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0, &defaultAudioDescription, size), "AudioUnitSetProperty") ) {
 					if ( error ) *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:result userInfo:[NSDictionary dictionaryWithObject:@"Incompatible audio format" forKey:NSLocalizedDescriptionKey]];
-					[self release];
 					return nil;
 			  }
 			  
@@ -252,7 +248,6 @@ static inline BOOL _checkResult(OSStatus result, const char *operation, const ch
 					 !checkResult(result=AudioUnitSetProperty(_converterUnit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 0, &audioDescription, sizeof(AudioStreamBasicDescription)), "AudioUnitSetProperty(kAudioUnitProperty_StreamFormat)") ) {
 					
 					if ( error ) *error = [NSError errorWithDomain:NSOSStatusErrorDomain code:result userInfo:[NSDictionary dictionaryWithObject:@"Couldn't setup converter audio unit" forKey:NSLocalizedDescriptionKey]];
-					[self release];
 					return nil;
 			  }
 		 }
@@ -296,7 +291,7 @@ static inline BOOL _checkResult(OSStatus result, const char *operation, const ch
 
 	if(url)
 	{
-		checkResult(result=AudioFileOpenURL((CFURLRef)url, kAudioFileReadPermission, 0, &_audioUnitFile), "AudioFileOpenURL");
+		checkResult(result=AudioFileOpenURL((CFURLRef)CFBridgingRetain(url), kAudioFileReadPermission, 0, &_audioUnitFile), "AudioFileOpenURL");
 		if(noErr == result)
 		{
 			 // Set the file to play
@@ -313,7 +308,7 @@ static inline BOOL _checkResult(OSStatus result, const char *operation, const ch
 			checkResult(AudioFileGetProperty(_audioUnitFile, kAudioFilePropertyDataFormat, &size, &_audioDescription),
 							 "AudioFileGetProperty(kAudioFilePropertyDataFormat)");
 
-			_lengthInFrames = packetCount * _audioDescription.mFramesPerPacket;
+			_lengthInFrames = (UInt32)(packetCount * _audioDescription.mFramesPerPacket);
 			_url = url;
 
 			[self setupPlayRegion];
@@ -348,7 +343,7 @@ static inline BOOL _checkResult(OSStatus result, const char *operation, const ch
 															 kAudioUnitScope_Global, 0, &curTime, &valsz),
 															 "AudioUnitGetProperty - kAudioUnitProperty_CurrentPlayTime");
 	
-		_playhead = (unsigned long)curTime.mSampleTime;
+		_playhead = (SInt32)curTime.mSampleTime;
 		_playhead += _locatehead;
 
 		if(_playhead >= _lengthInFrames) {
@@ -386,7 +381,7 @@ static void completionCallHandler(AEAudioController *audioController, void *user
 	if((userInfo) && (userInfoLength >= sizeof(void*)))
 	{
 		AEAudioUnitFilePlayer* THIS;
-		memcpy(&THIS, userInfo, sizeof(void*));
+		memcpy((void*)&THIS, userInfo, sizeof(void*));
 
 		[THIS completionCallSetup];
 	}
@@ -397,7 +392,7 @@ static void audioRegionCompletion(void *userData, ScheduledAudioFileRegion *file
 {
 	if(userData)
 	{
-		AEAudioUnitFilePlayer *THIS = (AEAudioUnitFilePlayer*)userData;
+		AEAudioUnitFilePlayer *THIS = (__bridge AEAudioUnitFilePlayer*)userData;
 
 		// already stopped?
 		if((THIS->_channelIsPlaying) && (THIS->_audioControllerRef))
@@ -425,7 +420,7 @@ static void audioRegionCompletion(void *userData, ScheduledAudioFileRegion *file
 		region.mTimeStamp.mFlags = kAudioTimeStampSampleTimeValid;
 		region.mTimeStamp.mSampleTime = 0;
 		region.mCompletionProc = audioRegionCompletion;
-		region.mCompletionProcUserData = self;
+		region.mCompletionProcUserData = (__bridge void *)(self);
 		region.mAudioFile = _audioUnitFile;
 		region.mLoopCount = 0;
 		region.mStartFrame = _locatehead;
